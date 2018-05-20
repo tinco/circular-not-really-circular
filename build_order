@@ -1,0 +1,106 @@
+#!/usr/bin/env ruby
+require 'ripper'
+require 'pp'
+
+paths = ARGV.empty? ? ["."] : ARGV
+
+def determine_build_order(paths)
+  files = paths
+    .flat_map {|p| list_files(p) }
+    .select {|p| p.end_with?(".rb")}
+
+  parsed_files = files.map {|p| parse(p) }
+  build_context = parsed_files.map {|p| determine_definitions_and_references(p) }
+  pp build_context
+end
+
+def determine_definitions_and_references(file)
+  definitions_and_references = scan(file[:parsed][1]) # [:program, [..] ]
+
+
+  file.merge! definitions_and_references
+
+  file
+end
+
+def scan(tree)
+  # we want to match a module, a class, constant or method definition
+  # and add those to definitions
+  definitions = {}
+  tree.each do |sexp|
+    definition, body = match_definition(sexp)
+    if definition
+      definitions[definition] = {}
+      
+      if body
+        result = scan(body)
+        definitions[definition] = result[:definitions]
+        # TODO also merge references, they should have their scope associated
+      end
+    end
+  end
+
+  # we want to match constants and ident references and add those to references
+
+
+  # inside those matches we want to recurse to find more definitions and references
+
+  references = []
+  
+  {
+    definitions: definitions,
+    references: references
+  }
+end
+
+def match_definition(sexp)
+  match_class(sexp) || match_module(sexp) || match_method(sexp) || match_constant(sexp)
+end
+
+def match_class(sexp)
+  # [:class, [:const_ref ... ], nil, ... ]
+  if sexp && sexp.first == :class
+    [resolve_name(sexp[1]), sexp[3][1]]
+  end
+end
+
+def match_module(sexp)
+  # [:module, [:const_ref ... ], ... ]
+  if sexp && sexp.first == :module
+    [resolve_name(sexp[1]), sexp[2][1]]
+  end
+end
+
+def match_method(sexp)
+  false
+end
+
+def match_constant(sexp)
+  false
+end
+
+def resolve_name(sexp)
+  if sexp[0] == :const_ref
+    # [:const_ref, [:@const, "View", [1, 6]]],
+    sexp[1][1]
+  else
+    raise "name not a const_ref"
+  end
+rescue
+  puts "Could not resolve name: #{ sexp.inspect }"
+end
+
+def parse(file)
+  {
+    name: file,
+    parsed: Ripper.sexp(File.read(file)),
+    definitions: {},
+    references: {}
+  }
+end
+
+def list_files(path)
+  Dir.glob("#{path}/**/*")
+end
+
+determine_build_order(paths)
