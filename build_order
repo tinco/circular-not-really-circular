@@ -27,6 +27,8 @@ def scan(tree)
   # we want to match a module, a class, constant or method definition
   # and add those to definitions
   definitions = {}
+  references = []
+
   tree.each do |sexp|
     definition, body = match_definition(sexp)
     if definition
@@ -35,22 +37,77 @@ def scan(tree)
       if body
         result = scan(body)
         definitions[definition] = result[:definitions]
-        # TODO also merge references, they should have their scope associated
+        result[:references].each do |r|
+          # Each reference is a tuple of the name of the reference, and
+          # its named scope
+          references << [r[0], r[1].unshift(definition)]
+        end
       end
     end
   end
 
   # we want to match constants and ident references and add those to references
+  tree.each do |sexp|
+    next unless sexp
+    references =
+      match_class_inheritance(sexp) ||
+      match_command(sexp) ||
+      match_expression(sexp)
 
+    references.each do |reference|
+      references << [reference,[]] if reference
+    end
+  end
 
   # inside those matches we want to recurse to find more definitions and references
 
-  references = []
   
   {
     definitions: definitions,
     references: references
   }
+end
+
+# Note these will have to be expressions that can be evaluated at compile time
+def match_expression(sexp)
+  # can a named scope be created inside an expression? if so
+  # then this means we're going to have to track both at the
+  # same time :(
+  match_const_path(sexp) ||
+    match_call(sexp) ||
+    match_top_const(sexp) ||
+    match_var_ref(sexp) ||
+    match_assign(sexp)
+    nil # etc..
+end
+
+def match_call(sexp)
+  if sexp && sexp[0] == :call
+    match_expression(sexp[1]) # TODO continue implementation
+  end
+end
+
+# [:const_path_ref, [:var_ref, [:@const, "B1", [1, 0]]], [:@const, "B2", [1, 4]]]
+def match_const_path(sexp)
+  if sexp && sexp[0] == :const_path_ref
+    # TODO what if it somehow references a constant that's not part of the
+    # const path? is that possible?
+    (match_expression(sexp[1) + sexp[2][1]).join("::")
+  end
+end
+
+def match_command(sexp)
+  if sexp && sexp[0] == :command
+    # TODO research what else can be in a command
+    args = sexp[2]
+    args[1].flat_map {|a| match_expression(a)}.compact
+  end
+end
+
+def match_class_inheritance(sexp)
+  if sexp && sexp.first == :class
+    match_expression(sexp[2]) # TODO untested
+  end
 end
 
 def match_definition(sexp)
