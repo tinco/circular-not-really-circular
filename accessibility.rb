@@ -1,5 +1,5 @@
 module ADR
-  class Accessiblity
+  module Accessibility
     def speak message
       puts message
     end

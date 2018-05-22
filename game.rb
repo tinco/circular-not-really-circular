@@ -1,6 +1,6 @@
 module ADR
   class Game
-    include ::Accessiblity
+    include ADR::Accessibility
 
     def initialize
 
