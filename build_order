@@ -11,12 +11,36 @@ def determine_build_order(paths)
 
   parsed_files = files.map {|p| parse(p) }
   build_context = parsed_files.map {|p| determine_definitions_and_references(p) }
-  pp build_context
+
+  order = resolve_order(build_context)
+  puts order.join("\n")
+end
+
+def resolve_order(build_context)
+  # first we have to establish for each file which files it depends on
+  dependants = establish_dependencies(build_context)
+  # we sort by number of dependencies
+  dependants.sort! {|f1, f2| f1[:dependencies].length <=> f2[:dependencies].length }
+  # and create a list that will contain the final order
+  build_order = []
+  while !dependants.empty?
+    # we loop over the ordered files, if a file has no dependencies that
+    # are not in the final order, we add that file to the final order
+    resolved, dependants = build_order.partition do |dependant|
+      dependant[:dependencies].all? {|dependency| build_order.include? dependency}
+    end
+    # if we loop twice over the same list, we raise an exception that a
+    # circular dependency exists
+    if resolved.empty?
+      raise "Circular dependency found: \n#{dependants.inspect}\nBuild order: #{build_order}
+    else
+      build_order += resolved
+    end
+  end
 end
 
 def determine_definitions_and_references(file)
   definitions_and_references = scan(file[:parsed][1]) # [:program, [..] ]
-
 
   file.merge! definitions_and_references
 
