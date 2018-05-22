@@ -13,7 +13,7 @@ def determine_build_order(paths)
   build_context = parsed_files.map {|p| determine_definitions_and_references(p) }
 
   order = resolve_order(build_context)
-  puts order.map{|f| f[:name]}.join("\n")
+  puts order.join("\n")
 end
 
 def resolve_order(build_context)
@@ -26,7 +26,7 @@ def resolve_order(build_context)
   while !dependants.empty?
     # we loop over the ordered files, if a file has no dependencies that
     # are not in the final order, we add that file to the final order
-    resolved, dependants = build_order.partition do |dependant|
+    resolved, dependants = dependants.partition do |dependant|
       dependant[:dependencies].all? {|dependency| build_order.include? dependency}
     end
     # if we loop twice over the same list, we raise an exception that a
@@ -34,7 +34,7 @@ def resolve_order(build_context)
     if resolved.empty?
       raise "Circular dependency found: \n#{dependants.inspect}\nBuild order: #{build_order.inspect}"
     else
-      build_order += resolved
+      build_order += resolved.map {|d| d[:name]}
     end
   end
 
@@ -58,6 +58,8 @@ def establish_dependencies(build_context)
       dependencies: references.map {|r| get_dependency(definitions, r)}
     }
   end
+
+  dependants
 end
 
 def get_dependency(definitions, reference)
@@ -71,7 +73,8 @@ def get_dependency(definitions, reference)
   found = false
   prefix = ""
   loop do
-    result = definitions["::" + prefix + name]
+    fullname = prefix + "::" + name
+    result = definitions[fullname]
     return result if result
     raise "Could not find reference #{name} (#{prefix}), in #{definitions.inspect}" if nesting.empty?
     prefix += "::" + nesting.shift
