@@ -13,7 +13,7 @@ def determine_build_order(paths)
   build_context = parsed_files.map {|p| determine_definitions_and_references(p) }
 
   order = resolve_order(build_context)
-  puts order.join("\n")
+  puts order.map{|f| f[:name]}.join("\n")
 end
 
 def resolve_order(build_context)
@@ -32,10 +32,59 @@ def resolve_order(build_context)
     # if we loop twice over the same list, we raise an exception that a
     # circular dependency exists
     if resolved.empty?
-      raise "Circular dependency found: \n#{dependants.inspect}\nBuild order: #{build_order}
+      raise "Circular dependency found: \n#{dependants.inspect}\nBuild order: #{build_order.inspect}"
     else
       build_order += resolved
     end
+  end
+
+  build_order
+end
+
+def establish_dependencies(build_context)
+  definitions = {}
+  dependants = []
+
+  # we make a Hash of each definition, to the file it is defined in
+  build_context.each do |f|
+    add_definitions(definitions, f[:name], f[:definitions], "")
+  end
+
+  # for each reference in each file, we want to get the file that has it defined
+  build_context.each do |f|
+    references = f[:references]
+    dependants << {
+      name: f[:name],
+      dependencies: references.map {|r| get_dependency(definitions, r)}
+    }
+  end
+end
+
+def get_dependency(definitions, reference)
+  name, nesting = reference
+  if name.start_with? "::"
+    result = definitions[name]
+    raise "Could not find reference #{name}" unless result
+    return result
+  end
+
+  found = false
+  prefix = ""
+  loop do
+    result = definitions["::" + prefix + name]
+    return result if result
+    raise "Could not find reference #{name} (#{prefix}), in #{definitions.inspect}" if nesting.empty?
+    prefix += "::" + nesting.shift
+  end
+
+  raise "Could not find reference #{name}"
+end
+
+def add_definitions(definitions, filename, new_definitions, prefix)
+  new_definitions.each do |name, nested|
+    fullname = prefix + "::" + name
+    definitions[fullname] = filename # TODO multiple file definitions
+    add_definitions(definitions, filename, nested, fullname)
   end
 end
 
@@ -184,14 +233,14 @@ end
 def match_class(sexp)
   # [:class, [:const_ref ... ], nil, ... ]
   if sexp && sexp.first == :class
-    [resolve_name(sexp[1]), sexp[3][1]]
+    [] << resolve_name(sexp[1]) << sexp[3][1]
   end
 end
 
 def match_module(sexp)
   # [:module, [:const_ref ... ], ... ]
   if sexp && sexp.first == :module
-    [resolve_name(sexp[1]), sexp[2][1]]
+    [] << resolve_name(sexp[1]) << sexp[2][1]
   end
 end
 
@@ -201,7 +250,7 @@ end
 
 def resolve_name(sexp)
   if sexp[0] == :const_ref
-    # [:const_ref, [:@const, "View", [1, 6]]],
+    # [:const_ref, [:@const, "View", [1, 6]]]
     sexp[1][1]
   else
     raise "name not a const_ref"
